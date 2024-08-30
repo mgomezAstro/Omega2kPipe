@@ -4,11 +4,17 @@ from astropy.io import fits
 from astropy.stats import mad_std
 import astropy.units as u
 import ccdproc
+import astroscrappy as lacos
 from ccdproc import CCDData
 from glob import glob
 from pathlib import Path
 import os
 import shutil
+import logging
+import warnings
+
+
+warnings.filterwarnings(action="ignore", message="RuntimeWatning")
 
 
 class Orginizer:
@@ -51,15 +57,21 @@ class Orginizer:
         for f in all_cals:
             hdr = fits.getheader(str(f))
             if hdr["FILTER"] == "BLANK":
-                shutil.copy(f, self.dark_dir)
+                filepath = self.dark_dir / f.split("/")[-1]
+                if not filepath.is_file():
+                    shutil.copy(f, self.dark_dir)
             else:
-                shutil.copy(f, self.flat_dir)
+                filepath = self.flat_dir / f.split("/")[-1]
+                if not filepath.is_file():
+                    shutil.copy(f, self.flat_dir)
         for f in all_sci:
-            shutil.copy(f, self.sci_dir)
+            filepath = self.sci_dir / f.split("/")[-1]
+            if not filepath.is_file():
+                shutil.copy(f, self.sci_dir)
 
 
 class Omega2kPipe(Orginizer):
-    def __init__(self, sky_frames: list):
+    def __init__(self, sky_frames: list, log_level: int = 2):
         super().__init__(sky_frames=sky_frames)
 
         self.orgnize()
@@ -73,6 +85,16 @@ class Omega2kPipe(Orginizer):
         self.master_sky = None
         self.master_flat = None
         self.mask_bad_pixels = None
+
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.setLevel(log_level * 10)
+        ch = logging.StreamHandler()
+        ch.setLevel(log_level * 10)
+        formatter = logging.Formatter(
+            "%(levelname)s | %(asctime)s | %(message)s"
+        )
+        ch.setFormatter(formatter)
+        self.logger.addHandler(ch)
 
     @property
     def _weird_keywords(self):
@@ -105,8 +127,32 @@ class Omega2kPipe(Orginizer):
 
         return hdu
 
+    def _clean_bad_pixels(self, data, mask):
+        rows, cols = mask.shape
+
+        image = data.data
+        index_error = 0
+        for i in range(rows):
+            for j in range(cols):
+                if mask[i, j] == 1:
+                    try:
+                        image[i, j] = np.nan
+                        box_im = image[i - 5 : i + 5, j - 5 : j + 5]
+                        mean_value = np.nanmedian(box_im)
+                        image[i, j] = mean_value
+                    except IndexError:
+                        index_error += 1
+        if index_error > 0:
+            self.logger.warning(
+                f"A total of {index_error} pixels at the edge of the image were not correctly masked."
+            )
+
+        data.data = image
+
+        return data
+
     def get_master_dark(self):
-        list_of_darks = glob(str(self.dark_dir) + "/*.fits")
+        list_of_darks = glob(str(self.dark_dir) + "/*cali.fits")
         darkimages = []
 
         for dark in list_of_darks:
@@ -135,27 +181,39 @@ class Omega2kPipe(Orginizer):
         self.master_dark_path = self.dark_dir / "master_dark.fits"
         self.master_dark = master_dark
 
+        self.logger.info(
+            f"Master successfully generated at: {self.master_dark_path}."
+        )
+
     def get_bad_pixels_mask(self):
-        std = np.std(self.master_dark.data)
+        std = np.nanstd(self.master_dark.data)
 
         mask = np.zeros_like(self.master_dark.data)
         mask[self.master_dark.data > 3 * std] = 1
+        mask[self.master_dark.data < -3 * std] = 1
 
         hdu = fits.PrimaryHDU(data=mask)
         hdu.writeto(self.sci_dir / "mask_bad_pixels.fits", overwrite=True)
         self.mask_bad_pixels_path = self.sci_dir / "mask_bad_pixels.fits"
         self.mask_bad_pixels = mask
 
+        self.logger.info(
+            f"Bad pixel image generated and saved at: {self.mask_bad_pixels_path}. Num of bad pixels found {self.mask_bad_pixels.sum():.0f}."
+        )
+
     def get_master_flats(self):
-        list_of_flats = glob(str(self.flat_dir) + "/*.fits")
+        list_of_flats = glob(str(self.flat_dir) + "/*cali.fits")
         flatimages = {}
+        flatnames = {}
 
         for flat in list_of_flats:
             data, hdr = fits.getdata(flat, header=True)
             band = hdr["FILTER"]
             if band not in flatimages:
                 flatimages[band] = []
+                flatnames[band] = []
             flatimages[band].append(CCDData(data=data, header=hdr, unit="adu"))
+            flatnames[band].append(flat)
 
         self.master_flat = {}
         self.master_flat_path = {}
@@ -189,9 +247,11 @@ class Omega2kPipe(Orginizer):
             master_flat = self._history_keywords(
                 master_flat,
                 f"master_flat_{band}",
-                ["flats/flat", "flats/flat"],
+                flatnames[band],
                 "FLAT",
+                band,
             )
+            master_flat.header["FILTER"] = band
             master_flat.write(
                 self.flat_dir / f"master_flat_{band}.fits", overwrite=True
             )
@@ -200,13 +260,18 @@ class Omega2kPipe(Orginizer):
             )
             self.master_flat[band] = master_flat
 
-    def reduce_images(self):
-        list_of_sci = glob(str(self.sci_dir) + "/*.fits")
+            self.logger.info(
+                f"Master {band} flat generated at: {self.master_flat_path[band]}."
+            )
+
+    def reduce_images(self, clean_bp: bool = True, clean_cr: bool = True):
+        list_of_sci = glob(str(self.sci_dir) + "/*sci*.fits")
         sciimages = {}
 
-        for sci in sciimages:
+        for sci in list_of_sci:
             data, hdr = fits.getdata(sci, header=True)
             band = hdr["FILTER"]
+            # objname = hdr["OBJECT"].rstrip().lstrip().replace(" ", "_")
             if band not in sciimages:
                 sciimages[band] = []
 
@@ -216,8 +281,42 @@ class Omega2kPipe(Orginizer):
                 sci_red,
                 self.master_dark,
                 exposure_time="EXPTIME",
-                exposure_unit=u.seconds,
+                exposure_unit=u.second,
             )
             sci_red = ccdproc.flat_correct(sci_red, self.master_flat[band])
 
+            sci_red = self._history_keywords(
+                sci_red,
+                "fd_" + sci.split("/")[-1],
+                [
+                    self.master_dark.header["OBJECT"],
+                    self.master_flat[band].header["OBJECT"],
+                ],
+                "SCI",
+                band,
+            )
+
+            if clean_bp:
+                sci_red = self._clean_bad_pixels(sci_red, self.mask_bad_pixels)
+
+            for keyword in self._weird_keywords:
+                if keyword in sci_red.header:
+                    del sci_red.header[keyword]
+
+            # if not os.path.exists(self.sci_dir / objname):
+            # os.mkdir(self.sci_dir / objname)
+            if not os.path.exists(self.sci_dir / "redu"):
+                os.mkdir(self.sci_dir / "redu")
+            outputfile_name = "fd_" + sci.split("/")[-1]
+            sci_red.write(
+                self.sci_dir / "redu" / outputfile_name, overwrite=True
+            )
+
             sciimages[band].append(sci_red)
+
+        self.logger.info(
+            f"Scientific images reduced and saved at: {self.sci_dir / 'redu'}."
+        )
+        if clean_bp:
+            self.logger.info("Bad pixels were removed.")
+        self.logger.info(f"Total reduced images: {len(list_of_sci)}.")
