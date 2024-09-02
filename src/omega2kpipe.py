@@ -1,21 +1,20 @@
 import numpy as np
 from datetime import datetime
 from astropy.io import fits
-from astropy.stats import mad_std
+from astropy.stats import mad_std, SigmaClip
 from astropy.table import unique
+from astropy.utils.exceptions import AstropyWarning
 import astropy.units as u
 import ccdproc
-import astroscrappy as lacos
 from astropy.nddata import CCDData
-from glob import glob
 from pathlib import Path
 import os
-import shutil
 import logging
 import warnings
 
 
 warnings.filterwarnings(action="ignore", message="RuntimeWarning")
+warnings.simplefilter("ignore", category=AstropyWarning)
 
 
 def remove_weird_keywords(list_of_fits: list):
@@ -66,48 +65,17 @@ class Orginizer:
         if not os.path.exists(self.mask_dir):
             os.mkdir(self.mask_dir)
 
-    # def orgnize(self):
-    # all_cals = glob(str(self.raw_dir) + "/*cal-cali.fits")
-    # all_sci = glob(str(self.raw_dir) + "/*sci*.fits")
-    # for f in all_cals:
-    #     hdr = fits.getheader(str(f))
-    #     if hdr["FILTER"] == "BLANK":
-    #         filepath = self.dark_dir / f.split("/")[-1]
-    #         if not filepath.is_file():
-    #             shutil.copy(f, self.dark_dir)
-    #     else:
-    #         filepath = self.flat_dir / f.split("/")[-1]
-    #         if not filepath.is_file():
-    #             shutil.copy(f, self.flat_dir)
-    # for f in all_sci:
-    #     filepath = self.sci_dir / f.split("/")[-1]
-    #     if not filepath.is_file():
-    #         shutil.copy(f, self.sci_dir)
-
-    # return ccdproc.ImageFileCollection(location=self.raw_dir)
-
 
 class Omega2kPipe(Orginizer):
     def __init__(self, log_level: int = 2):
         super().__init__()
 
-        # self.raw_fits: ccdproc.ImageFileCollection = self.orgnize()
         self.cali_fits = ccdproc.ImageFileCollection(
             location=self.raw_dir, glob_include="*cal-cali.fits"
         )
         self.sci_fits = ccdproc.ImageFileCollection(
             location=self.raw_dir, glob_include="*sci-blan.fits"
         )
-
-        # self.master_dark_path = None
-        # self.master_sky_path = None
-        # self.master_flat_path = None
-        # self.mask_bad_pixels_path = None
-
-        self.master_dark = None
-        self.master_sky = None
-        self.master_flat = None
-        self.mask_bad_pixels = None
 
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.setLevel(log_level * 10)
@@ -185,7 +153,7 @@ class Omega2kPipe(Orginizer):
 
         for itime, exptime in dark_itime_exptime:
             dark_list = self.cali_fits.files_filtered(
-                filter="BLANK", itime=itime, exptime=exptime
+                filter="BLANK", itime=itime, exptime=exptime, include_path=True
             )
 
             master_dark = ccdproc.combine(
@@ -214,177 +182,167 @@ class Omega2kPipe(Orginizer):
 
             master_dark.write(self.dark_dir / output_fits_name, overwrite=True)
 
-        # list_of_darks = glob(str(self.dark_dir) + "/*cali.fits")
-        # darkimages = []
-
-        # for dark in list_of_darks:
-        #     data, hdr = fits.getdata(dark, header=True)
-        #     darkimages.append(CCDData(data=data, header=hdr, unit="adu"))
-
-        # master_dark = ccdproc.combine(
-        #     img_list=darkimages,
-        #     method="average",
-        #     sigma_clip=True,
-        #     sigma_clip_low_thresh=5.0,
-        #     sigma_clip_high_thresh=5.0,
-        #     sigma_clip_func=np.ma.median,
-        #     sigma_clip_dev_func=mad_std,
-        # )
-
-        # master_dark = self._history_keywords(
-        #     master_dark, "master_dark", list_of_darks, "DARK"
-        # )
-
-        # for keyword in self._weird_keywords:
-        #     if keyword in master_dark.header:
-        #         del master_dark.header[keyword]
-
-        # master_dark.write(self.dark_dir / "master_dark.fits", overwrite=True)
-        # self.master_dark_path = self.dark_dir / "master_dark.fits"
-        # self.master_dark = master_dark
-
         self.logger.info(
             f"Master darks successfully generated at: {self.dark_dir}."
         )
 
-    def get_bad_pixels_mask(self):
-        std = np.nanstd(self.master_dark.data)
-
-        mask = np.zeros_like(self.master_dark.data)
-        mask[self.master_dark.data > 3 * std] = 1
-        mask[self.master_dark.data < -3 * std] = 1
-
-        hdu = fits.PrimaryHDU(data=mask)
-        hdu.writeto(self.sci_dir / "mask_bad_pixels.fits", overwrite=True)
-        self.mask_bad_pixels_path = self.sci_dir / "mask_bad_pixels.fits"
-        self.mask_bad_pixels = mask
-
-        self.logger.info(
-            f"Bad pixel image generated and saved at: {self.mask_bad_pixels_path}. Num of bad pixels found {self.mask_bad_pixels.sum():.0f}."
-        )
-
-    def get_master_flats(self, subtract_dark: bool = True):
+    def get_master_flats(self, dark_fits_file: str = None):
         mask_flats = self.cali_fits.summary["filter"] != "BLANK"
         flat_band = self.cali_fits.summary["filter"][mask_flats]
-        flat_band = unique(flat_band, keys=["filter"])
+        flat_band = set(flat_band.tolist())
 
-        if subtract_dark:
-            pass
-            # list_of_flats = glob(str(self.flat_dir) + "/*cali.fits")
-            # flatimages = {}
-            # flatnames = {}
+        if dark_fits_file is not None:
+            master_dark = CCDData.read(dark_fits_file, unit="adu")
+        else:
+            darks = ccdproc.ImageFileCollection(
+                location=self.dark_dir, glob_include="master*.fits"
+            )
+            master_dark = CCDData.read(
+                darks.files_filtered(include_path=True, combined=True)[0]
+            )
 
-            # for flat in list_of_flats:
-            #     data, hdr = fits.getdata(flat, header=True)
-            #     band = hdr["FILTER"]
-            #     if band not in flatimages:
-            #         flatimages[band] = []
-            #         flatnames[band] = []
-            #     flatimages[band].append(CCDData(data=data, header=hdr, unit="adu"))
-            #     flatnames[band].append(flat)
+        flatimages = {}
 
-            # self.master_flat = {}
-            # self.master_flat_path = {}
-            # for band in flatimages:
+        for band in flat_band:
 
-            #     for i in range(len(flatimages[band])):
-            #         flatimages[band][i] = ccdproc.subtract_dark(
-            #             flatimages[band][i],
-            #             self.master_dark,
-            #             exposure_time="EXPTIME",
-            #             exposure_unit=u.second,
-            #             scale=False,
-            #         )
-            #         flatimages[band][i].header[
-            #             "HISTORY"
-            #         ] = "Dark removed: dark/master_dark.fits"
+            if band not in flatimages:
+                flatimages[band] = []
 
-            #     master_flat = ccdproc.combine(
-            #         img_list=flatimages[band],
-            #         method="average",
-            #         sigma_clip=True,
-            #         sigma_clip_low_thresh=5.0,
-            #         sigma_clip_high_thresh=5.0,
-            #         sigma_clip_func=np.ma.median,
-            #         sigma_clip_dev_func=mad_std,
-            #     )
+            raw_flats = self.cali_fits.files_filtered(
+                filter=band, include_path=True
+            )
 
-            #     master_flat = master_flat.divide(
-            #         np.median(master_flat.data, axis=0)
-            #     )
-            #     master_flat = self._history_keywords(
-            #         master_flat,
-            #         f"master_flat_{band}",
-            #         flatnames[band],
-            #         "FLAT",
-            #         band,
-            #     )
-            #     master_flat.header["FILTER"] = band
-            #     master_flat.write(
-            #         self.flat_dir / f"master_flat_{band}.fits", overwrite=True
-            #     )
-            #     self.master_flat_path[band] = (
-            #         self.flat_dir / f"master_flat_{band}.fits"
-            #     )
-            #     self.master_flat[band] = master_flat
+            for flat in raw_flats:
+                ccd_flat = CCDData.read(flat, unit="adu")
+                d_ccd_flat = ccdproc.subtract_dark(
+                    ccd_flat,
+                    master_dark,
+                    exposure_time="exptime",
+                    exposure_unit=u.second,
+                    scale=True,
+                )
+
+                d_ccd_flat.header["HISTORY"] = (
+                    "DARK removed, scaled dark, ccdproc."
+                )
+                d_ccd_flat.header["HISTORY"] = "  dark/master_dark.fits"
+                d_flat_outname = "d_" + flat.split("/")[-1]
+                d_ccd_flat.write(
+                    self.flat_dir / d_flat_outname, overwrite=True
+                )
+
+                flatimages[band].append(d_ccd_flat)
+
+            master_flat = ccdproc.combine(
+                flatimages[band],
+                method="average",
+                scale=lambda x: 1 / np.nanmedian(x),
+                sigma_clip=True,
+                sigma_clip_high_thresh=5.0,
+                sigma_clip_low_thresh=5.0,
+                sigma_clip_func=np.ma.median,
+                sigma_clip_dev_func=mad_std,
+            )
+
+            master_flat.meta["combined"] = True
+            master_flat = self._history_keywords(
+                hdu=master_flat,
+                name=f"master_flat_{band}",
+                list_of_calibs=raw_flats,
+                imtype="FLAT",
+            )
+
+            master_flat_outname = f"master_flat_{band}.fits"
+            master_flat.write(
+                self.flat_dir / master_flat_outname, overwrite=True
+            )
 
             self.logger.info(
-                f"Master {band} flat generated at: {self.master_flat_path[band]}."
+                f"Master {band} flat generated at: {self.flat_dir} as master_flat_{band}.fits."
             )
 
     def reduce_images(self, clean_bp: bool = True, clean_cr: bool = True):
-        list_of_sci = glob(str(self.sci_dir) + "/*sci*.fits")
-        sciimages = {}
+        darks = ccdproc.ImageFileCollection(location=self.dark_dir)
+        flats = ccdproc.ImageFileCollection(
+            location=self.flat_dir, glob_include="master*.fits"
+        )
 
-        for sci in list_of_sci:
-            data, hdr = fits.getdata(sci, header=True)
-            band = hdr["FILTER"]
-            # objname = hdr["OBJECT"].rstrip().lstrip().replace(" ", "_")
-            if band not in sciimages:
-                sciimages[band] = []
+        for sci_path in self.sci_fits.files_filtered(include_path=True):
+            sci_im = CCDData.read(sci_path, unit=u.adu)
 
-            # Processes
-            sci_red = CCDData(data=data, header=hdr, unit="adu")
-            sci_red = ccdproc.subtract_dark(
-                sci_red,
-                self.master_dark,
-                exposure_time="EXPTIME",
+            itime = sci_im.header["itime"]
+            exptime = sci_im.header["exptime"]
+            band = sci_im.header["filter"]
+
+            dark = darks.files_filtered(
+                itime=itime, exptime=exptime, include_path=True
+            )
+            master_dark = CCDData.read(dark[0])
+            flat = flats.files_filtered(filter=band, include_path=True)
+            master_flat = CCDData.read(flat[0])
+
+            # Dark correction
+            d_sci_im = ccdproc.subtract_dark(
+                sci_im,
+                master_dark,
+                exposure_time="exptime",
                 exposure_unit=u.second,
+                scale=False,
             )
-            sci_red = ccdproc.flat_correct(sci_red, self.master_flat[band])
-
-            sci_red = self._history_keywords(
-                sci_red,
-                "fd_" + sci.split("/")[-1],
-                [
-                    self.master_dark.header["OBJECT"],
-                    self.master_flat[band].header["OBJECT"],
-                ],
-                "SCI",
-                band,
+            d_sci_im.header["HISTORY"] = (
+                "DARK removed, no scaled dark, ccdproc."
             )
-
-            if clean_bp:
-                sci_red = self._clean_bad_pixels(sci_red, self.mask_bad_pixels)
-
-            for keyword in self._weird_keywords:
-                if keyword in sci_red.header:
-                    del sci_red.header[keyword]
-
-            # if not os.path.exists(self.sci_dir / objname):
-            # os.mkdir(self.sci_dir / objname)
-            if not os.path.exists(self.sci_dir / "redu"):
-                os.mkdir(self.sci_dir / "redu")
-            outputfile_name = "fd_" + sci.split("/")[-1]
-            sci_red.write(
-                self.sci_dir / "redu" / outputfile_name, overwrite=True
+            d_sci_im.header["HISTORY"] = (
+                f"  dark/master_dark_itime_{itime}_exp_{exptime}.fits"
             )
+            d_sci_oname = "d_" + sci_path.split("/")[-1]
+            d_sci_im.write(self.sci_dir / d_sci_oname, overwrite=True)
 
-            sciimages[band].append(sci_red)
+            # Flat correction
+            fd_sci_im = ccdproc.flat_correct(d_sci_im, master_flat)
+            fd_sci_im.header["HISTORY"] = "FLAT corrected, ccdproc."
+            fd_sci_im.header["HISTORY"] = f"  flat/master_flat_{band}.fits"
+            fd_sci_im.write(
+                self.sci_dir / str("f" + d_sci_oname), overwrite=True
+            )
 
         self.logger.info(
-            f"Scientific images reduced and saved at: {self.sci_dir / 'redu'}."
+            f"Total reduced images: {len(self.sci_fits.summary)}."
         )
-        if clean_bp:
-            self.logger.info("Bad pixels were removed.")
-        self.logger.info(f"Total reduced images: {len(list_of_sci)}.")
+
+    def remove_sky(self):
+        all_sci_im = ccdproc.ImageFileCollection(
+            location=self.sci_dir, glob_include="fd_*.fits"
+        )
+
+        bands = set(all_sci_im.summary["filter"].tolist())
+
+        for band in bands:
+            sci_im_band = all_sci_im.files_filtered(
+                include_path=True, filter=band
+            )
+
+            combined_stacked_data = ccdproc.combine(
+                sci_im_band,
+                method="median",
+                sigma_clip=True,
+                scale=lambda x: 1 / np.nanmedian(x),
+            )
+            combined_stacked_data.write(
+                self.sky_dir / f"sky_{band}.fits", overwrite=True
+            )
+
+            for sci_im in sci_im_band:
+                im = CCDData.read(sci_im)
+                sigclip = SigmaClip(sigma=3.0, cenfunc="median")
+                median_value = np.ma.median(sigclip(im.data))
+                data_skysub = (
+                    im.data - combined_stacked_data.data * median_value
+                )
+                im.data = data_skysub
+                im.header["HISTORY"] = "Sky subtracted."
+                im.header["HISTORY"] = f"   sky/sky_{band}.fits"
+                image_outname = "s" + sci_im.split("/")[-1]
+                im.write(self.sci_dir / image_outname, overwrite=True)
+
+        self.logger.info("Sky succesfully subtracted from all images.")
