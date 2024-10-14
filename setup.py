@@ -15,7 +15,7 @@ install_requires = [
 setup(
     name="Omega2kpipe",
     version="1.0.0b",
-    packages="omega2k.src",
+    packages="Omega2kPipe.src",
     package_dir={"": "src"},
     license="GPL-3.0",
     author="mgomez",
