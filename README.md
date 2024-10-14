@@ -14,6 +14,6 @@ The pipelie is totally based on astropy reduction tools.
 
 ### Installation
 
-```bash
+```
 pip install git+https://github.com/mgomezAstro/Omega2kPipe.git
 ```
