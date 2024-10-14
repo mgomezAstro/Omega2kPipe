@@ -17,3 +17,20 @@ The pipelie is totally based on astropy reduction tools.
 ```
 pip install git+https://github.com/mgomezAstro/Omega2kPipe.git
 ```
+
+### Warranty
+Omega2kPipe is provided as it is. No warranty at all.
+
+### Usage Example
+
+You must run inside the raw fits files data. Then: 
+
+```python
+from omega2kpipe import Omega2kPipe
+
+pipe = Omega2kPipe()
+pipe.get_master_dark()
+pipe.get_master_flats()
+pipe.reduce_images()
+pipe.remove_sky()
+```
