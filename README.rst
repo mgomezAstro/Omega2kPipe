@@ -42,7 +42,7 @@ You must run inside the raw fits files data. Then:
     pipe.get_master_flats()
     pipe.reduce_images()
     pipe.remove_sky()
-
+```
 
 
 .. |Astropy| image:: https://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat
