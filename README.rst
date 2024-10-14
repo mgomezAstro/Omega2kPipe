@@ -1,10 +1,13 @@
 |Astropy|
 
-# Omega2kpipe
+
+Omega2kpipe
+###########
+
 Omega2kpipe is an unofficial pipeline reduction of the near infrared camera Omega2000
 mounted in the 3.5m telescope at Calar Alto Observatory. The pipeline is based on
 the Omega2000 reduction techniques document that is available in its official website
-[here](https://www.caha.es/es/telescope-3-5m-2/omega-2000).
+`here <https://www.caha.es/es/telescope-3-5m-2/omega-2000>`_.
 
 This pipeline removes the DARK and FLATS from the scientific image according to the
 total exposure time and number of integrations. The pipeline also removes the SKY by
@@ -14,28 +17,34 @@ median value of the scientific image and then subtracted: sci - sky * median(sci
 
 The pipelie is totally based on astropy reduction tools.
 
-### Installation
+Installation
+===========
 
-```
-pip install git+https://github.com/mgomezAstro/Omega2kPipe.git
-```
 
-### Warranty
+``pip install git+https://github.com/mgomezAstro/Omega2kPipe.git``
+
+
+Warranty
+===========
+
 Omega2kPipe is provided as it is. No warranty at all.
 
-### Usage Example
+Usage Example
+===========
 
 You must run inside the raw fits files data. Then: 
 
-```python
-from omega2kpipe import Omega2kPipe
+.. code-block:: python
+   from omega2kpipe import Omega2kPipe
 
-pipe = Omega2kPipe()
-pipe.get_master_dark()
-pipe.get_master_flats()
-pipe.reduce_images()
-pipe.remove_sky()
-```
+   pipe = Omega2kPipe()
+   pipe.get_master_dark()
+   pipe.get_master_flats()
+   pipe.reduce_images()
+   pipe.remove_sky()
+
+   code ...
+
 
 .. |Astropy| image:: https://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat
     :target: https://www.astropy.org/
