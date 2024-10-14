@@ -71,10 +71,10 @@ class Omega2kPipe(Orginizer):
         super().__init__()
 
         self.cali_fits = ccdproc.ImageFileCollection(
-            location=self.raw_dir, glob_include="*cal-cali.fits"
+            location=self.raw_dir, glob_include="*cal-*.fits"
         )
         self.sci_fits = ccdproc.ImageFileCollection(
-            location=self.raw_dir, glob_include="*sci-blan.fits"
+            location=self.raw_dir, glob_include="*sci-*.fits"
         )
 
         self.logger = logging.getLogger(self.__class__.__name__)
