@@ -35,13 +35,13 @@ Usage Example
 You must run inside the raw fits files data. Then: 
 
 .. code-block:: python
-   from omega2kpipe import Omega2kPipe
+    from omega2kpipe import Omega2kPipe
 
-   pipe = Omega2kPipe()
-   pipe.get_master_dark()
-   pipe.get_master_flats()
-   pipe.reduce_images()
-   pipe.remove_sky()
+    pipe = Omega2kPipe()
+    pipe.get_master_dark()
+    pipe.get_master_flats()
+    pipe.reduce_images()
+    pipe.remove_sky()
 
 
 
