@@ -28,7 +28,7 @@ Omega2kPipe is provided as it is. No warranty at all.
 
 ## Usage Example
 
-You must run inside the raw fits files data. Then: 
+You must run the following scrpt inside the raw fits files directory. 
 
 ```python
     from omega2kpipe import Omega2kPipe
