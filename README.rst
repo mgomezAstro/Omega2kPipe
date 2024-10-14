@@ -1,3 +1,5 @@
+|Astropy|
+
 # Omega2kpipe
 Omega2kpipe is an unofficial pipeline reduction of the near infrared camera Omega2000
 mounted in the 3.5m telescope at Calar Alto Observatory. The pipeline is based on
@@ -34,3 +36,7 @@ pipe.get_master_flats()
 pipe.reduce_images()
 pipe.remove_sky()
 ```
+
+.. |Astropy| image:: https://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat
+    :target: https://www.astropy.org/
+    :alt: Powered by Astropy
