@@ -34,7 +34,7 @@ Usage Example
 
 You must run inside the raw fits files data. Then: 
 
-.. code-block:: python
+```python
     from omega2kpipe import Omega2kPipe
 
     pipe = Omega2kPipe()
