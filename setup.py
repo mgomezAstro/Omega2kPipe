@@ -5,7 +5,7 @@ description = "Omega2kpipe is an unofficial pipeline reduction of the near infra
 setup(
     name="Omega2kpipe",
     version="1.0.0b",
-    packages=["src"],
+    packages=["omega2kpipe"],
     license="GPL-3.0",
     author="mgomez",
     author_email="mgomez_astro@outlook.com",
