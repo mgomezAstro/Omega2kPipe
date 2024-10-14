@@ -14,7 +14,7 @@ computing a median-normilized SKY frame by using the median-mode value of the st
 pixels of the scientific images. The normalized sky frame is then multiplyied by the
 median value of the scientific image and then subtracted: sci - sky * median(sci).
 
-The pipelie is totally based on astropy reduction tools.
+The pipeline is totally based on astropy reduction tools.
 
 ## Installation
 
