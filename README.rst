@@ -43,7 +43,6 @@ You must run inside the raw fits files data. Then:
    pipe.reduce_images()
    pipe.remove_sky()
 
-   code ...
 
 
 .. |Astropy| image:: https://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat
